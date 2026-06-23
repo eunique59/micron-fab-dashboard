@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Micron ID1 Subfab — Fabrication Pipeline</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #F8FAFC;
+    color: #0F172A;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+  #loading {
+    align-items: center; justify-content: center;
+    height: 100vh; font-size: 15px; color: #64748B;
+  }
+  #app { display: none; }
+
+  /* Header */
+  .header {
+    background: #fff;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .header-title { font-size: 15px; font-weight: 600; color: #0F172A; }
+  .header-title span { color: #378ADD; }
+  .header-sub { font-size: 12px; color: #94A3B8; margin-top: 2px; }
+  .badge {
+    background: #DCFCE7; border: 1px solid #86EFAC;
+    border-radius: 6px; padding: 3px 10px;
+    font-size: 12px; color: #15803D; font-weight: 600;
+  }
+
+  /* Tabs */
+  .tabbar {
+    display: flex; background: #fff;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 0 24px; gap: 2px;
+    overflow-x: auto;
+  }
+  .tab-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 10px 16px; font-size: 13px; font-weight: 400;
+    color: #94A3B8; border-bottom: 2px solid transparent;
+    white-space: nowrap; transition: color 0.15s;
+  }
+  .tab-btn:hover { color: #378ADD; }
+  .tab-btn.active { color: #378ADD; font-weight: 600; border-bottom-color: #378ADD; }
+
+  /* Content */
+  .content { padding: 24px; max-width: 1100px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Eyebrow */
+  .eyebrow {
+    font-size: 11px; color: #94A3B8;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    margin: 0 0 10px;
+  }
+
+  /* KPI grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+  .kpi-card {
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .kpi-label {
+    font-size: 11px; color: #94A3B8;
+    letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 4px;
+  }
+  .kpi-value { font-size: 24px; font-weight: 700; color: #0F172A; line-height: 1.1; }
+  .kpi-value span { font-size: 14px; font-weight: 400; color: #94A3B8; }
+  .kpi-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+  .kpi-pct { font-size: 12px; font-weight: 600; border-radius: 4px; padding: 2px 7px; }
+  .kpi-delta { font-size: 11px; }
+
+  /* Progress bars */
+  .progress-wrap { margin-bottom: 12px; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 13px; margin-bottom: 5px; color: #0F172A;
+  }
+  .progress-label span:last-child { color: #94A3B8; }
+  .progress-track { background: #F1F5F9; border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-fill { height: 8px; border-radius: 4px; transition: width 0.6s ease; }
+
+  /* Section title */
+  .section-title { font-size: 14px; font-weight: 600; color: #0F172A; margin-bottom: 6px; }
+
+  /* Stat mini grid */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px; margin-top: 16px;
+  }
+  .stat-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-mini {
+    background: #F8FAFC; border: 1px solid #E2E8F0;
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .stat-mini-label {
+    font-size: 11px; color: #94A3B8;
+    text-transform: uppercase; letter-spacing: 0.07em;
+  }
+  .stat-mini-val { font-size: 22px; font-weight: 700; margin-top: 4px; color: #0F172A; }
+
+  /* Alert */
+  .alert-warn {
+    background: #FFFBEB; border: 1px solid #FCD34D;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 13px; color: #92400E; margin-bottom: 20px;
+  }
+
+  /* Chart wrappers */
+  .chart-wrap { position: relative; width: 100%; height: 250px; margin: 20px 0 4px; }
+  .chart-wrap-sm { position: relative; width: 100%; height: 220px; margin: 20px 0 4px; }
+
+  /* Divider */
+  .divider { height: 1px; background: #E2E8F0; margin: 24px 0; }
+
+  /* Error */
+  #error { display:none; padding: 40px 24px; color: #E24B4A; }
+</style>
+</head>
+<body>
+
+<div id="token-screen" style="display:flex; align-items:center; justify-content:center; height:100vh; background:#F8FAFC;">
+  <div style="background:#fff; border:1px solid #E2E8F0; border-radius:12px; padding:32px 36px; max-width:420px; width:90%;">
+    <div style="font-size:15px; font-weight:600; color:#0F172A; margin-bottom:6px;">Micron ID1 — Fabrication Pipeline</div>
+    <div style="font-size:13px; color:#64748B; margin-bottom:20px;">Enter your Airtable Personal Access Token to load live data. It will be saved in your browser — you won't be asked again.</div>
+    <input id="token-input" type="password" placeholder="patXXXXX.XXXXXXX"
+      style="width:100%; padding:9px 12px; border:1px solid #CBD5E1; border-radius:6px; font-size:13px; outline:none; margin-bottom:12px;"/>
+    <button onclick="saveToken()"
+      style="width:100%; padding:9px; background:#378ADD; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
+      Connect
+    </button>
+    <div id="token-error" style="color:#E24B4A; font-size:12px; margin-top:10px; display:none;"></div>
+    <div style="margin-top:16px; padding-top:16px; border-top:1px solid #F1F5F9; display:flex; justify-content:flex-end;">
+      <button onclick="clearToken()" style="background:none; border:none; font-size:11px; color:#94A3B8; cursor:pointer;">Reset saved token</button>
+    </div>
+  </div>
+</div>
+<div id="loading" style="display:none; align-items:center; justify-content:center; height:100vh; font-size:15px; color:#64748B;">Loading fabrication data…</div>
+<div id="error"></div>
+
+<div id="app">
+  <div class="header">
+    <div>
+      <div class="header-title">Fabrication pipeline — <span>Micron ID1 Subfab</span></div>
+      <div class="header-sub" id="header-sub">Project 230144</div>
+    </div>
+    <span class="badge" id="updated-badge">Loading…</span>
+  </div>
+
+  <div class="tabbar">
+    <button class="tab-btn active" onclick="switchTab(0,this)">Overview</button>
+    <button class="tab-btn" onclick="switchTab(1,this)">Lift groups</button>
+    <button class="tab-btn" onclick="switchTab(2,this)">Modules</button>
+    <button class="tab-btn" onclick="switchTab(3,this)">Laterals</button>
+    <button class="tab-btn" onclick="switchTab(4,this)">Submains &amp; spools</button>
+  </div>
+
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <div class="tab-panel active" id="panel-0">
+      <p class="eyebrow" id="ov-lg-eyebrow">Lift groups</p>
+      <div class="kpi-grid" id="ov-lg-kpis"></div>
+      <p class="eyebrow">Modules</p>
+      <div class="kpi-grid" id="ov-mod-kpis"></div>
+      <p class="eyebrow">Laterals</p>
+      <div class="kpi-grid" id="ov-lat-kpis"></div>
+      <p class="eyebrow">Spools</p>
+      <div class="kpi-grid" id="ov-spool-kpis"></div>
+      <div class="section-title" style="margin-top:28px;">Weekly velocity — last 8 weeks</div>
+      <p class="eyebrow" style="margin-bottom:14px;">Net new units added per week at key milestones</p>
+      <div class="chart-wrap-sm"><canvas id="chart-velocity" role="img" aria-label="Weekly velocity bar chart"></canvas></div>
+    </div>
+
+    <!-- LIFT GROUPS -->
+    <div class="tab-panel" id="panel-1">
+      <div class="section-title" id="lg-title">Lift groups</div>
+      <div style="margin-bottom:20px;" id="lg-bars"></div>
+      <div class="chart-wrap"><canvas id="chart-lg" role="img" aria-label="Lift group trend chart"></canvas></div>
+      <div class="stat-grid" id="lg-stats"></div>
+    </div>
+
+    <!-- MODULES -->
+    <div class="tab-panel" id="panel-2">
+      <div class="section-title" id="mod-title">Modules</div>
+      <div style="margin-bottom:20px;" id="mod-bars"></div>
+      <div class="chart-wrap"><canvas id="chart-mod" role="img" aria-label="Module trend chart"></canvas></div>
+      <div class="stat-grid" id="mod-stats"></div>
+    </div>
+
+    <!-- LATERALS -->
+    <div class="tab-panel" id="panel-3">
+      <div class="section-title" id="lat-title">Laterals</div>
+      <div style="margin-bottom:20px;" id="lat-bars"></div>
+      <div class="chart-wrap"><canvas id="chart-lat" role="img" aria-label="Laterals trend chart"></canvas></div>
+      <div class="stat-grid stat-grid-2" id="lat-stats"></div>
+    </div>
+
+    <!-- SUBMAINS & SPOOLS -->
+    <div class="tab-panel" id="panel-4">
+      <div class="section-title" id="sub-title">Submains</div>
+      <p class="eyebrow" style="margin-bottom:10px;">Tracking started March 22</p>
+      <div id="sub-bars"></div>
+      <div id="sub-alert"></div>
+      <div class="divider"></div>
+      <div class="section-title" id="spool-title">Spools</div>
+      <div style="margin-bottom:20px;" id="spool-bars"></div>
+      <div class="chart-wrap-sm"><canvas id="chart-spool" role="img" aria-label="Spool trend chart"></canvas></div>
+      <div class="stat-grid" id="spool-stats"></div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+const BASE_ID = 'app5FHXj13wOXr87k';
+const STORAGE_KEY = 'micron_fab_token';
+
+function getToken() { return localStorage.getItem(STORAGE_KEY); }
+function clearToken() {
+  localStorage.removeItem(STORAGE_KEY);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('token-screen').style.display = 'flex';
+  document.getElementById('token-input').value = '';
+}
+async function saveToken() {
+  const val = document.getElementById('token-input').value.trim();
+  if (!val) return;
+  document.getElementById('token-error').style.display = 'none';
+  localStorage.setItem(STORAGE_KEY, val);
+  await boot();
+}
+const TABLE   = 'RPT - Weekly Snapshots';
+
+const BLUE   = '#378ADD';
+const PURPLE = '#7F77DD';
+const GREEN  = '#1D9E75';
+const AMBER  = '#BA7517';
+
+const pct = (n, d) => d > 0 ? Math.round(n / d * 100) : 0;
+const num = v => v == null ? 0 : Number(v);
+
+// ── Fetch all records (handles pagination) ──────────────────────────────────
+async function fetchAllRecords() {
+  const fields = [
+    'Date',
+    'Total Lift Groups','Total Lift Groups Shipped','Total Lift Groups Hoisted','Total Lift Groups QC Complete',
+    'Total Modules','Total Modules Shipped','Total Modules Hoisted','Total Modules QC Complete',
+    'Total Laterals','Total Laterals Received at OSM','Total Laterals Shipped to Site','Total Laterals QC Complete',
+    'Total Submains','Total Submains Received at OSM','Total Submains Shipped to Site','Total Submains QC Complete',
+    'Total Spools','Total Spools Received at OSM','Total Spools Shipped to Site','Total Spools QC Complete',
+  ];
+  const params = new URLSearchParams({ 'fields[]': fields });
+  // Airtable needs fields[] repeated for each field
+  const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join('&');
+
+  let allRecords = [], offset = null;
+  do {
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE)}?${fieldParams}${offset ? '&offset=' + offset : ''}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error(`Airtable API error: ${res.status} ${res.statusText}`);
+    const data = await res.json();
+    allRecords = allRecords.concat(data.records);
+    offset = data.offset || null;
+  } while (offset);
+  return allRecords;
+}
+
+// ── Parse records into sorted snapshots ─────────────────────────────────────
+function parseSnapshots(records) {
+  return records
+    .map(r => {
+      const f = r.fields;
+      const raw = f['Date'];
+      if (!raw) return null;
+      const d = new Date(raw);
+      const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return {
+        date, _ts: d.getTime(),
+        lg:    { t: num(f['Total Lift Groups']),  s: num(f['Total Lift Groups Shipped']),  h: num(f['Total Lift Groups Hoisted']),  q: num(f['Total Lift Groups QC Complete'])  },
+        mod:   { t: num(f['Total Modules']),       s: num(f['Total Modules Shipped']),       h: num(f['Total Modules Hoisted']),       q: num(f['Total Modules QC Complete'])       },
+        lat:   { t: num(f['Total Laterals']),      o: num(f['Total Laterals Received at OSM']), s: num(f['Total Laterals Shipped to Site']), q: num(f['Total Laterals QC Complete']) },
+        sub:   { t: num(f['Total Submains']),      o: num(f['Total Submains Received at OSM']), s: num(f['Total Submains Shipped to Site']), q: num(f['Total Submains QC Complete']) },
+        spool: { t: num(f['Total Spools']),        o: num(f['Total Spools Received at OSM']), s: num(f['Total Spools Shipped to Site']), q: num(f['Total Spools QC Complete']) },
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a._ts - b._ts);
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+function kpiCard(label, val, total, prevVal, prevTotal, color) {
+  const p = pct(val, total), pp = pct(prevVal, prevTotal);
+  const delta = p - pp, sign = delta >= 0 ? '+' : '';
+  const deltaColor = delta >= 0 ? '#1D9E75' : '#E24B4A';
+  return `<div class="kpi-card">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value">${val.toLocaleString()}<span>/${total.toLocaleString()}</span></div>
+    <div class="kpi-row">
+      <span class="kpi-pct" style="color:${color};background:${color}22;">${p}%</span>
+      <span class="kpi-delta" style="color:${deltaColor};">${sign}${delta.toFixed(1)}pp</span>
+    </div>
+  </div>`;
+}
+
+function progressBar(label, val, total, color) {
+  const p = pct(val, total);
+  return `<div class="progress-wrap">
+    <div class="progress-label"><span>${label}</span><span>${val.toLocaleString()} / ${total.toLocaleString()} (${p}%)</span></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${p}%;background:${color};"></div></div>
+  </div>`;
+}
+
+function statMini(label, val, color) {
+  return `<div class="stat-mini">
+    <div class="stat-mini-label">${label}</div>
+    <div class="stat-mini-val" style="color:${color||'#0F172A'};">${typeof val === 'number' ? val.toLocaleString() : val}</div>
+  </div>`;
+}
+
+// ── Chart registry (destroy before recreating) ───────────────────────────────
+const charts = {};
+function makeChart(id, type, labels, datasets, opts = {}) {
+  if (charts[id]) { charts[id].destroy(); }
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: '#64748B', boxWidth: 12, padding: 16, font: { size: 12 } } },
+        tooltip: { backgroundColor: '#1E293B', titleColor: '#94A3B8', bodyColor: '#E2E8F0', borderColor: '#334155', borderWidth: 1 },
+      },
+      scales: {
+        x: { ticks: { color: '#64748B', font: { size: 11 }, maxTicksLimit: 10 }, grid: { color: '#F1F5F9' } },
+        y: { ticks: { color: '#64748B', font: { size: 11 }, callback: opts.yPct ? v => v + '%' : undefined }, grid: { color: '#F1F5F9' }, ...(opts.yPct ? { min: 0, max: 100 } : {}) },
+      },
+      ...opts.extra,
+    }
+  });
+}
+
+function areaDataset(label, data, color) {
+  return { label, data, borderColor: color, backgroundColor: color + '28', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 };
+}
+function barDataset(label, data, color) {
+  return { label, data, backgroundColor: color + 'cc', borderRadius: 4, borderSkipped: false };
+}
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+let _currentTab = 0;
+function switchTab(idx, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-' + idx).classList.add('active');
+  _currentTab = idx;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render(snapshots) {
+  const L = snapshots[snapshots.length - 1];
+  const P = snapshots[snapshots.length - 2] || L;
+  const labels = snapshots.map(d => d.date);
+
+  // Header
+  document.getElementById('header-sub').textContent =
+    `Project 230144 · ${snapshots.length} weekly snapshots`;
+  document.getElementById('updated-badge').textContent = `Updated ${L.date}`;
+
+  // ── Overview ──────────────────────────────────────────────────────────────
+  document.getElementById('ov-lg-eyebrow').textContent = `Lift groups — as of ${L.date}`;
+  document.getElementById('ov-lg-kpis').innerHTML =
+    kpiCard('Shipped',      L.lg.s, L.lg.t, P.lg.s, P.lg.t, BLUE)   +
+    kpiCard('Hoisted',      L.lg.h, L.lg.t, P.lg.h, P.lg.t, PURPLE) +
+    kpiCard('QC complete',  L.lg.q, L.lg.t, P.lg.q, P.lg.t, GREEN);
+  document.getElementById('ov-mod-kpis').innerHTML =
+    kpiCard('Shipped',      L.mod.s, L.mod.t, P.mod.s, P.mod.t, BLUE)   +
+    kpiCard('Hoisted',      L.mod.h, L.mod.t, P.mod.h, P.mod.t, PURPLE) +
+    kpiCard('QC complete',  L.mod.q, L.mod.t, P.mod.q, P.mod.t, GREEN);
+  document.getElementById('ov-lat-kpis').innerHTML =
+    kpiCard('Rcvd at OSM',     L.lat.o, L.lat.t, P.lat.o, P.lat.t, AMBER) +
+    kpiCard('Shipped to site', L.lat.s, L.lat.t, P.lat.s, P.lat.t, BLUE)  +
+    kpiCard('QC complete',     L.lat.q, L.lat.t, P.lat.q, P.lat.t, GREEN);
+  document.getElementById('ov-spool-kpis').innerHTML =
+    kpiCard('Rcvd at OSM',     L.spool.o, L.spool.t, P.spool.o, P.spool.t, AMBER) +
+    kpiCard('Shipped to site', L.spool.s, L.spool.t, P.spool.s, P.spool.t, BLUE)  +
+    kpiCard('QC complete',     L.spool.q, L.spool.t, P.spool.q, P.spool.t, GREEN);
+
+  // Velocity chart
+  const prev8 = snapshots.slice(-9);
+  const vLabels = prev8.slice(1).map(d => d.date);
+  const lgH = [], modH = [], latS = [];
+  for (let i = 1; i < prev8.length; i++) {
+    lgH.push(prev8[i].lg.h  - prev8[i-1].lg.h);
+    modH.push(prev8[i].mod.h - prev8[i-1].mod.h);
+    latS.push(prev8[i].lat.s - prev8[i-1].lat.s);
+  }
+  makeChart('chart-velocity', 'bar', vLabels, [
+    barDataset('LG hoisted',       lgH,  PURPLE),
+    barDataset('Modules hoisted',  modH, BLUE),
+    barDataset('Laterals shipped', latS, AMBER),
+  ]);
+
+  // ── Lift Groups ───────────────────────────────────────────────────────────
+  document.getElementById('lg-title').textContent = `Lift groups — ${L.lg.t} total`;
+  document.getElementById('lg-bars').innerHTML =
+    progressBar('Shipped to site', L.lg.s, L.lg.t, BLUE)   +
+    progressBar('Hoisted',         L.lg.h, L.lg.t, PURPLE) +
+    progressBar('QC complete',     L.lg.q, L.lg.t, GREEN);
+  makeChart('chart-lg', 'line', labels, [
+    areaDataset('Shipped',      snapshots.map(d => pct(d.lg.s, d.lg.t)), BLUE),
+    areaDataset('Hoisted',      snapshots.map(d => pct(d.lg.h, d.lg.t)), PURPLE),
+    areaDataset('QC complete',  snapshots.map(d => pct(d.lg.q, d.lg.t)), GREEN),
+  ], { yPct: true });
+  document.getElementById('lg-stats').innerHTML =
+    statMini('Remaining to ship',  L.lg.t - L.lg.s)              +
+    statMini('Remaining to hoist', L.lg.t - L.lg.h)              +
+    statMini('Hoisted, not QC\'d', L.lg.h - L.lg.q, AMBER);
+
+  // ── Modules ───────────────────────────────────────────────────────────────
+  document.getElementById('mod-title').textContent = `Modules — ${L.mod.t.toLocaleString()} total`;
+  document.getElementById('mod-bars').innerHTML =
+    progressBar('Shipped to site', L.mod.s, L.mod.t, BLUE)   +
+    progressBar('Hoisted',         L.mod.h, L.mod.t, PURPLE) +
+    progressBar('QC complete',     L.mod.q, L.mod.t, GREEN);
+  makeChart('chart-mod', 'line', labels, [
+    areaDataset('Shipped',      snapshots.map(d => pct(d.mod.s, d.mod.t)), BLUE),
+    areaDataset('Hoisted',      snapshots.map(d => pct(d.mod.h, d.mod.t)), PURPLE),
+    areaDataset('QC complete',  snapshots.map(d => pct(d.mod.q, d.mod.t)), GREEN),
+  ], { yPct: true });
+  document.getElementById('mod-stats').innerHTML =
+    statMini('Remaining to ship',  L.mod.t - L.mod.s)              +
+    statMini('Remaining to hoist', L.mod.t - L.mod.h)              +
+    statMini('Hoisted, not QC\'d', L.mod.h - L.mod.q, AMBER);
+
+  // ── Laterals ──────────────────────────────────────────────────────────────
+  document.getElementById('lat-title').textContent = `Laterals — ${L.lat.t} total`;
+  document.getElementById('lat-bars').innerHTML =
+    progressBar('Rcvd at OSM (fab complete)', L.lat.o, L.lat.t, AMBER) +
+    progressBar('Shipped to site',            L.lat.s, L.lat.t, BLUE)  +
+    progressBar('QC complete',                L.lat.q, L.lat.t, GREEN);
+  makeChart('chart-lat', 'line', labels, [
+    areaDataset('Rcvd at OSM',   snapshots.map(d => pct(d.lat.o, d.lat.t)), AMBER),
+    areaDataset('Shipped',       snapshots.map(d => pct(d.lat.s, d.lat.t)), BLUE),
+    areaDataset('QC complete',   snapshots.map(d => pct(d.lat.q, d.lat.t)), GREEN),
+  ], { yPct: true });
+  document.getElementById('lat-stats').innerHTML =
+    statMini('At OSM, not shipped', L.lat.o - L.lat.s, AMBER) +
+    statMini('Shipped, not QC\'d',  L.lat.s - L.lat.q, BLUE);
+
+  // ── Submains & Spools ─────────────────────────────────────────────────────
+  document.getElementById('sub-title').textContent = `Submains — ${L.sub.t} total`;
+  document.getElementById('sub-bars').innerHTML =
+    progressBar('Rcvd at OSM',     L.sub.o, L.sub.t || 1, AMBER) +
+    progressBar('Shipped to site', L.sub.s, L.sub.t || 1, BLUE)  +
+    progressBar('QC complete',     L.sub.q, L.sub.t || 1, GREEN);
+  document.getElementById('sub-alert').innerHTML = L.sub.s === 0
+    ? `<div class="alert-warn">⚠ 0 submains shipped to site as of ${L.date}. ${L.sub.o} received at OSM only.</div>`
+    : '';
+
+  document.getElementById('spool-title').textContent = `Spools — ${L.spool.t.toLocaleString()} total`;
+  document.getElementById('spool-bars').innerHTML =
+    progressBar('Rcvd at OSM',     L.spool.o, L.spool.t, AMBER) +
+    progressBar('Shipped to site', L.spool.s, L.spool.t, BLUE)  +
+    progressBar('QC complete',     L.spool.q, L.spool.t, GREEN);
+  makeChart('chart-spool', 'line', labels, [
+    areaDataset('Rcvd at OSM',   snapshots.map(d => pct(d.spool.o, d.spool.t)), AMBER),
+    areaDataset('Shipped',       snapshots.map(d => pct(d.spool.s, d.spool.t)), BLUE),
+    areaDataset('QC complete',   snapshots.map(d => pct(d.spool.q, d.spool.t)), GREEN),
+  ], { yPct: true });
+  document.getElementById('spool-stats').innerHTML =
+    statMini('Remaining to ship', L.spool.t - L.spool.s)              +
+    statMini('Shipped, not QC\'d', L.spool.s - L.spool.q, AMBER)      +
+    statMini('QC complete',        L.spool.q, GREEN);
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+async function boot() {
+  const tokenScreen = document.getElementById('token-screen');
+  const loading     = document.getElementById('loading');
+  const errorEl     = document.getElementById('error');
+
+  tokenScreen.style.display = 'none';
+  loading.style.display = 'flex';
+  errorEl.style.display = 'none';
+
+  try {
+    const records   = await fetchAllRecords();
+    const snapshots = parseSnapshots(records);
+    if (!snapshots.length) throw new Error('No snapshot records found.');
+    render(snapshots);
+    loading.style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+  } catch (err) {
+    loading.style.display = 'none';
+    // If 401/403, token is bad — show token screen with error
+    if (err.message.includes('401') || err.message.includes('403')) {
+      localStorage.removeItem(STORAGE_KEY);
+      document.getElementById('token-error').textContent = 'Token invalid or expired. Please try again.';
+      document.getElementById('token-error').style.display = 'block';
+      tokenScreen.style.display = 'flex';
+    } else {
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'Error loading data: ' + err.message;
+    }
+  }
+}
+
+// On page load — go straight to data if token saved, otherwise token screen is already visible
+if (getToken()) {
+  document.getElementById('token-screen').style.display = 'none';
+  boot();
+}
+</script>
+</body>
+</html>
